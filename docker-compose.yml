@@ -1,0 +1,21 @@
+services:
+  chat-frontend:
+    build: .
+    container_name: chat-frontend
+    restart: unless-stopped
+    environment:
+      - NEXT_PUBLIC_MATRIX_URL=${NEXT_PUBLIC_MATRIX_URL}
+      - NEXT_PUBLIC_HOMESERVER_NAME=${NEXT_PUBLIC_HOMESERVER_NAME}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.chat-frontend.rule=Host(`${CHAT_DOMAIN}`)"
+      - "traefik.http.routers.chat-frontend.entrypoints=https"
+      - "traefik.http.routers.chat-frontend.tls=true"
+      - "traefik.http.routers.chat-frontend.tls.certresolver=letsencrypt"
+      - "traefik.http.services.chat-frontend.loadbalancer.server.port=3000"
+    networks:
+      - coolify
+
+networks:
+  coolify:
+    external: true
