@@ -25,7 +25,7 @@ A mobile-first, real-time chat application built on the Matrix protocol with Nex
 - ✅ Push notifications (Web Notifications API)
 - ✅ Authenticated media download
 - ✅ Auto-join on invite
-- 🚧 Video calls (in progress — WebRTC via matrix-js-sdk)
+- ✅ Video calls 
 
 ## Tech Stack
 
