@@ -27,6 +27,8 @@ A mobile-first, real-time chat application built on the Matrix protocol with Nex
 - ✅ Auto-join on invite
 - ✅ Video calls 
 
+<img width="1907" height="915" alt="image" src="https://github.com/user-attachments/assets/a351f027-a981-4351-bb15-d59231f0d331" />
+
 ## Tech Stack
 
 | Layer       | Technology                          |
