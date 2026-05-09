@@ -155,7 +155,6 @@ The compose file assumes a Traefik reverse proxy with a `coolify` Docker network
 
 ## Roadmap
 
-- [ ] Video calls — stable WebRTC (in progress)
 - [ ] End-to-end encryption (matrix-js-sdk olm)
 - [ ] Group chats
 - [ ] Message reactions
