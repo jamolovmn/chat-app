@@ -118,12 +118,28 @@ export function stopMatrix() {
 
 export async function loginMatrix(username: string, password: string) {
   const tempClient = sdk.createClient({ baseUrl: MATRIX_URL });
-  const response = await tempClient.login("m.login.password", { user: username, password });
-  localStorage.setItem("mx_access_token", response.access_token);
-  localStorage.setItem("mx_user_id", response.user_id);
-  localStorage.setItem("mx_device_id", response.device_id);
-  stopMatrix();
-  return response;
+  const MAX_RETRIES = 2;
+  let lastError: any;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const response = await tempClient.login("m.login.password", { user: username, password });
+      localStorage.setItem("mx_access_token", response.access_token);
+      localStorage.setItem("mx_user_id", response.user_id);
+      localStorage.setItem("mx_device_id", response.device_id);
+      stopMatrix();
+      return response;
+    } catch (e: any) {
+      lastError = e;
+      if (e?.httpStatus === 429 && attempt < MAX_RETRIES) {
+        const waitMs = e?.data?.retry_after_ms || (attempt + 1) * 5000;
+        console.warn(`Login 429, ${Math.round(waitMs / 1000)}s kutilmoqda...`);
+        await new Promise(r => setTimeout(r, Math.min(waitMs, 15000)));
+      } else {
+        throw e;
+      }
+    }
+  }
+  throw lastError;
 }
 
 export function logoutMatrix() {
@@ -189,20 +205,28 @@ export async function sendLocation(roomId: string, lat: number, lng: number) {
   });
 }
 
-/** Xabarni o'qildi deb belgilaydi — unread count to'g'ri ko'rsatilishi uchun. */
-export async function markRoomAsRead(roomId: string) {
-  const client = getMatrixClient();
-  if (!client) return;
-  try {
-    const room = client.getRoom(roomId);
-    if (!room) return;
-    const events = room.getLiveTimeline().getEvents();
-    const lastEvent = events[events.length - 1];
-    if (!lastEvent) return;
-    await client.sendReadReceipt(lastEvent);
-  } catch (e: any) {
-    if (e?.httpStatus !== 429) console.warn("markAsRead:", e?.message);
-  }
+/** Xabarni o'qildi deb belgilaydi — debounced (3s) haddan oshmasligi uchun. */
+const _readTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+export function markRoomAsRead(roomId: string) {
+  const existing = _readTimers.get(roomId);
+  if (existing) clearTimeout(existing);
+  const timer = setTimeout(async () => {
+    _readTimers.delete(roomId);
+    const client = getMatrixClient();
+    if (!client) return;
+    try {
+      const room = client.getRoom(roomId);
+      if (!room) return;
+      const events = room.getLiveTimeline().getEvents();
+      const lastEvent = events[events.length - 1];
+      if (!lastEvent) return;
+      await client.sendReadReceipt(lastEvent);
+    } catch (e: any) {
+      if (e?.httpStatus !== 429) console.warn("markAsRead:", e?.message);
+    }
+  }, 3000);
+  _readTimers.set(roomId, timer);
 }
 
 // =====================================================================

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import ChatList from "@/components/ChatList";
 import ChatWindow from "@/components/ChatWindow";
@@ -18,6 +18,10 @@ export default function ChatPage() {
   const [incomingCall, setIncomingCall] = useState<any>(null);
   const [ready, setReady] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+
+  // Refs to avoid stale closures in popstate handler
+  const showVideoCallRef = useRef(false);
+  const selectedRoomIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -75,25 +79,44 @@ export default function ChatPage() {
     return off;
   }, [ready, showVideoCall, incomingCall]);
 
+  // Refs in sync with state (popstate handler uses refs to avoid stale closures)
+  useEffect(() => { showVideoCallRef.current = showVideoCall; }, [showVideoCall]);
+  useEffect(() => { selectedRoomIdRef.current = selectedRoomId; }, [selectedRoomId]);
+
+  // Back button handler — runs once on mount
   useEffect(() => {
+    // Push initial state so popstate can fire on first back press
+    window.history.pushState({ chatApp: true }, "", "/chat");
+
     function handlePopState() {
-      if (showVideoCall) { setShowVideoCall(false); setIncomingCall(null); return; }
-      if (selectedRoomId) { setSelectedRoomId(null); return; }
+      // Always push a new state so app never exits on back press
+      window.history.pushState({ chatApp: true }, "", "/chat");
+      if (showVideoCallRef.current) {
+        setShowVideoCall(false);
+        setIncomingCall(null);
+        return;
+      }
+      if (selectedRoomIdRef.current) {
+        setSelectedRoomId(null);
+        return;
+      }
+      // On list screen — stay here, do nothing
     }
+
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
-  }, [selectedRoomId, showVideoCall]);
+  }, []);
 
   function openRoom(id: string, name: string) {
     setSelectedRoomId(id);
     setSelectedRoomName(name);
     setShowVideoCall(false);
-    window.history.pushState(null, "", "/chat");
+    window.history.pushState({ chatApp: true, room: id }, "", "/chat");
   }
 
   function goBack() {
     setSelectedRoomId(null);
-    window.history.back();
+    // Don't call history.back() — popstate handler manages navigation
   }
 
   function endCall() {

@@ -69,6 +69,7 @@ export default function ChatList({ onSelectRoom, activeRoomId, isAdmin = false }
   const [deleteModal, setDeleteModal] = useState<{ id: string; name: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
   const longPressTimer = useRef<any>(null);
+  const loadRoomsTimer = useRef<any>(null);
 
   // Admin check — localStorage'dagi flag bilan birga isAdmin prop'i ham
   const [iAmAdmin, setIAmAdmin] = useState(false);
@@ -146,28 +147,26 @@ export default function ChatList({ onSelectRoom, activeRoomId, isAdmin = false }
 
     loadRooms();
 
-    const onTimeline = () => loadRooms();
-    const onMembership = () => loadRooms();
-    const onPresence = () => loadRooms();
-    const onName = () => loadRooms();
-    const onReceipt = () => loadRooms();
+    const debounced = () => {
+      clearTimeout(loadRoomsTimer.current);
+      loadRoomsTimer.current = setTimeout(loadRooms, 300);
+    };
 
-    client.on("Room.timeline" as any, onTimeline);
-    client.on("RoomMember.membership" as any, onMembership);
-    client.on("User.presence" as any, onPresence);
-    client.on("Room.name" as any, onName);
-    client.on("Room" as any, onTimeline);
-    client.on("Room.receipt" as any, onReceipt);
-
-    // Har 30 sekundda online status'ni yangilash (presence event'i kelmaslik xavfi)
+    client.on("Room.timeline" as any, debounced);
+    client.on("RoomMember.membership" as any, debounced);
+    client.on("User.presence" as any, debounced);
+    client.on("Room.name" as any, debounced);
+    client.on("Room" as any, debounced);
+    client.on("Room.receipt" as any, debounced);
 
     return () => {
-      client.off("Room.timeline" as any, onTimeline);
-      client.off("RoomMember.membership" as any, onMembership);
-      client.off("User.presence" as any, onPresence);
-      client.off("Room.name" as any, onName);
-      client.off("Room" as any, onTimeline);
-      client.off("Room.receipt" as any, onReceipt);
+      clearTimeout(loadRoomsTimer.current);
+      client.off("Room.timeline" as any, debounced);
+      client.off("RoomMember.membership" as any, debounced);
+      client.off("User.presence" as any, debounced);
+      client.off("Room.name" as any, debounced);
+      client.off("Room" as any, debounced);
+      client.off("Room.receipt" as any, debounced);
     };
   }, [loadRooms]);
 

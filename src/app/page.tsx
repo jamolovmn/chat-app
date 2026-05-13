@@ -19,8 +19,15 @@ export default function LoginPage() {
       router.push("/chat");
     } catch (err: unknown) {
       const e = err as any;
-      const msg = e?.data?.error || e?.message || String(err);
-      setError(msg || "Username yoki parol noto'g'ri");
+      if (e?.httpStatus === 429 || e?.errcode === "M_LIMIT_EXCEEDED") {
+        const secs = e?.data?.retry_after_ms ? Math.ceil(e.data.retry_after_ms / 1000) : 10;
+        setError(`Juda ko'p urinish. ${secs} soniya kuting va qayta urining.`);
+      } else if (e?.errcode === "M_FORBIDDEN" || e?.httpStatus === 403) {
+        setError("Username yoki parol noto'g'ri");
+      } else {
+        const msg = e?.data?.error || e?.message || String(err);
+        setError(msg || "Xatolik yuz berdi. Qayta urining.");
+      }
     } finally {
       setLoading(false);
     }

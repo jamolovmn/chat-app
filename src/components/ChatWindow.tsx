@@ -362,8 +362,9 @@ export default function ChatWindow({ roomId, roomName, onBack, onVideoCall }: Pr
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
   const messagesEndRef    = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef  = useRef<MediaRecorder | null>(null);
-  const activeStreamRef   = useRef<MediaStream | null>(null);   // mic track'larni to'xtatish uchun
+  const activeStreamRef   = useRef<MediaStream | null>(null);
   const audioChunksRef    = useRef<Blob[]>([]);
   const recordTimerRef    = useRef<any>(null);
   const waveIntervalRef   = useRef<any>(null);
@@ -373,6 +374,18 @@ export default function ChatWindow({ roomId, roomName, onBack, onVideoCall }: Pr
   const typingTimerRef    = useRef<any>(null);
   const recWaveRef        = useRef<number[]>(Array.from({ length: 30 }, () => 0.1));
   const [liveWave, setLiveWave] = useState<number[]>(Array.from({ length: 30 }, () => 0.1));
+
+  // Scroll tracking
+  const atBottomRef = useRef(true);
+  const [showScrollDown, setShowScrollDown] = useState(false);
+
+  // Long press for message context menu
+  const msgPressTimer = useRef<any>(null);
+  const msgPressPos = useRef<{ msg: Message; x: number; y: number } | null>(null);
+
+  // Read receipt — other user's latest read event
+  const [otherReadEventId, setOtherReadEventId] = useState<string | null>(null);
+  const [otherReadIdx, setOtherReadIdx] = useState(-1);
 
   const myUserId = typeof window !== "undefined" ? localStorage.getItem("mx_user_id") : null;
 
@@ -600,22 +613,79 @@ export default function ChatWindow({ roomId, roomName, onBack, onVideoCall }: Pr
       setTypingUsers(typing);
     };
 
+    // Read receipt tracker
+    const cl2 = client;
+    function updateReadReceipt() {
+      const r = cl2.getRoom(roomId);
+      if (!r) return;
+      const others = r.getJoinedMembers().filter((m: any) => m.userId !== myUserId);
+      if (others.length === 0) return;
+      const eventId = (r as any).getEventReadUpTo?.(others[0].userId) ?? null;
+      setOtherReadEventId(eventId);
+    }
+    updateReadReceipt();
+
     client.on("Room.timeline" as any, onTimeline);
     client.on("Room.accountData" as any, onRoomEvent);
     client.on("RoomMember.typing" as any, onTyping);
     client.on("event" as any, onRoomEvent);
+    client.on("Room.receipt" as any, updateReadReceipt);
 
     return () => {
       client.off("Room.timeline" as any, onTimeline);
       client.off("Room.accountData" as any, onRoomEvent);
       client.off("RoomMember.typing" as any, onTyping);
       client.off("event" as any, onRoomEvent);
+      client.off("Room.receipt" as any, updateReadReceipt);
     };
   }, [roomId, myUserId, parseEvent]);
 
+  // otherReadIdx — messages yoki otherReadEventId o'zgarganda yangilanadi
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (!otherReadEventId) { setOtherReadIdx(-1); return; }
+    const idx = messages.findIndex(m => m.id === otherReadEventId);
+    setOtherReadIdx(idx);
+  }, [otherReadEventId, messages]);
+
+  // Smart scroll — faqat pastda bo'lsak yoki birinchi yuklanishda
+  const isFirstLoad = useRef(true);
+  useEffect(() => {
+    if (isFirstLoad.current && messages.length > 0) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
+      isFirstLoad.current = false;
+      return;
+    }
+    if (atBottomRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
   }, [messages]);
+
+  // Scroll tracker
+  function handleContainerScroll() {
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
+    atBottomRef.current = dist < 80;
+    setShowScrollDown(dist > 200);
+  }
+
+  // Long press handlers for message bubbles
+  function handleMsgPressStart(e: React.TouchEvent, msg: Message) {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    msgPressPos.current = { msg, x: rect.left, y: rect.top };
+    msgPressTimer.current = setTimeout(() => {
+      if (msgPressPos.current) {
+        const { msg: m, x, y } = msgPressPos.current;
+        setContextMenu({ msg: m, x, y: y - 10 });
+        if ((navigator as any).vibrate) (navigator as any).vibrate(50);
+      }
+    }, 500);
+  }
+
+  function handleMsgPressEnd() {
+    clearTimeout(msgPressTimer.current);
+    msgPressPos.current = null;
+  }
 
   const handleInputChange = useCallback((text: string) => {
     setInputText(text);
@@ -849,7 +919,7 @@ export default function ChatWindow({ roomId, roomName, onBack, onVideoCall }: Pr
   let lastDateLabel = "";
 
   return (
-    <div className="flex flex-col h-screen md:h-full bg-background relative" onClick={() => setContextMenu(null)}>
+    <div className="flex flex-col h-full bg-background relative" onClick={() => setContextMenu(null)}>
       <header className="bg-white/80 backdrop-blur-2xl border-b border-gray-200/30 h-[56px] md:h-[64px] px-3 flex justify-between items-center flex-shrink-0">
         <div className="flex items-center gap-2 min-w-0">
           <button onClick={onBack} className="text-primary p-1 rounded-full flex-shrink-0">
@@ -871,12 +941,16 @@ export default function ChatWindow({ roomId, roomName, onBack, onVideoCall }: Pr
         </button>
       </header>
 
-      <main className="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-1">
+      <main
+        ref={messagesContainerRef}
+        onScroll={handleContainerScroll}
+        className="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-1"
+      >
         {messages.length === 0 && (
           <div className="flex items-center justify-center flex-1 text-outline text-sm">Hali xabar yo'q</div>
         )}
 
-        {messages.map((msg, idx) => {
+        {messages.map((msg, msgIdx) => {
           // Date separator
           const dateLabel = getDateLabel(msg.timestamp);
           const showDateSep = dateLabel !== lastDateLabel;
@@ -917,8 +991,10 @@ export default function ChatWindow({ roomId, roomName, onBack, onVideoCall }: Pr
                   </div>
                 )}
                 <div className={`flex flex-col ${msg.isOwn ? "items-end" : "items-start"} max-w-[80%] md:max-w-[65%] cursor-pointer`}
-                  onContextMenu={(e) => openContextMenu(e, msg)}
-                  onTouchEnd={(e) => { e.preventDefault(); openContextMenu(e, msg); }}>
+                  onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setContextMenu({ msg, x: r.left, y: r.top - 10 }); }}
+                  onTouchStart={(e) => handleMsgPressStart(e, msg)}
+                  onTouchEnd={handleMsgPressEnd}
+                  onTouchMove={handleMsgPressEnd}>
                   {msg.replyTo && (
                     <div
                       onClick={(e) => {
@@ -945,9 +1021,20 @@ export default function ChatWindow({ roomId, roomName, onBack, onVideoCall }: Pr
                     </div>
                   )}
 
-                  <span className="text-[10px] text-outline mt-0.5 px-1">
+                  <span className="text-[10px] text-outline mt-0.5 px-1 flex items-center gap-0.5">
                     {formatMessageTime(msg.timestamp)}
-                    {msg.edited && <span className="ml-1 italic">(tahrir)</span>}
+                    {msg.edited && <span className="italic">(tahrir)</span>}
+                    {msg.isOwn && (
+                      <span
+                        className="material-symbols-outlined text-[13px]"
+                        style={{
+                          fontVariationSettings: "'FILL' 1",
+                          color: otherReadIdx !== -1 && msgIdx <= otherReadIdx ? "#34C759" : "rgba(0,0,0,0.3)",
+                        }}
+                      >
+                        {otherReadIdx !== -1 && msgIdx <= otherReadIdx ? "done_all" : "done"}
+                      </span>
+                    )}
                   </span>
                 </div>
               </div>
@@ -968,6 +1055,20 @@ export default function ChatWindow({ roomId, roomName, onBack, onVideoCall }: Pr
 
         <div ref={messagesEndRef} />
       </main>
+
+      {/* Scroll to bottom button */}
+      {showScrollDown && (
+        <button
+          onClick={() => {
+            messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+            atBottomRef.current = true;
+            setShowScrollDown(false);
+          }}
+          className="absolute bottom-[72px] right-3 z-50 w-9 h-9 rounded-full bg-white shadow-md border border-gray-200/50 flex items-center justify-center"
+        >
+          <span className="material-symbols-outlined text-[22px] text-primary">expand_more</span>
+        </button>
+      )}
 
       {/* Lightbox */}
       {lightboxUrl && <ImageLightbox url={lightboxUrl} onClose={() => setLightboxUrl(null)} />}
