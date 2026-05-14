@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { loginMatrix } from "@/lib/matrix";
 
@@ -9,6 +9,27 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [checking, setChecking] = useState(true);
+
+  // Agar foydalanuvchi avval login qilgan bo'lsa — to'g'ridan-to'g'ri chat'ga
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const token = localStorage.getItem("mx_access_token");
+    const userId = localStorage.getItem("mx_user_id");
+    if (token && userId) {
+      router.replace("/chat");
+    } else {
+      setChecking(false);
+    }
+  }, [router]);
+
+  if (checking) {
+    return (
+      <div className="h-[100dvh] bg-background flex items-center justify-center">
+        <div className="text-outline text-sm">Yuklanmoqda...</div>
+      </div>
+    );
+  }
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();

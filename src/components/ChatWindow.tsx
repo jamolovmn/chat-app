@@ -381,7 +381,11 @@ export default function ChatWindow({ roomId, roomName, onBack, onVideoCall }: Pr
 
   // Long press for message context menu
   const msgPressTimer = useRef<any>(null);
-  const msgPressPos = useRef<{ msg: Message; x: number; y: number } | null>(null);
+  const msgPressPos = useRef<{ msg: Message; x: number; y: number; startX: number; startY: number } | null>(null);
+
+  // Voice recording: hold-to-record uchun
+  const micPressTimer = useRef<any>(null);
+  const isHoldRecording = useRef(false);
 
   // Read receipt — other user's latest read event
   const [otherReadEventId, setOtherReadEventId] = useState<string | null>(null);
@@ -672,14 +676,31 @@ export default function ChatWindow({ roomId, roomName, onBack, onVideoCall }: Pr
   // Long press handlers for message bubbles
   function handleMsgPressStart(e: React.TouchEvent, msg: Message) {
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    msgPressPos.current = { msg, x: rect.left, y: rect.top };
+    const touch = e.touches[0];
+    msgPressPos.current = {
+      msg, x: rect.left, y: rect.top,
+      startX: touch?.clientX || 0, startY: touch?.clientY || 0,
+    };
     msgPressTimer.current = setTimeout(() => {
       if (msgPressPos.current) {
         const { msg: m, x, y } = msgPressPos.current;
         setContextMenu({ msg: m, x, y: y - 10 });
         if ((navigator as any).vibrate) (navigator as any).vibrate(50);
       }
-    }, 500);
+    }, 350);
+  }
+
+  function handleMsgPressMove(e: React.TouchEvent) {
+    // Faqat sezilarli harakatda (10px+) long-press'ni bekor qilish
+    if (!msgPressPos.current) return;
+    const t = e.touches[0];
+    if (!t) return;
+    const dx = Math.abs(t.clientX - msgPressPos.current.startX);
+    const dy = Math.abs(t.clientY - msgPressPos.current.startY);
+    if (dx > 10 || dy > 10) {
+      clearTimeout(msgPressTimer.current);
+      msgPressPos.current = null;
+    }
   }
 
   function handleMsgPressEnd() {
@@ -747,15 +768,19 @@ export default function ChatWindow({ roomId, roomName, onBack, onVideoCall }: Pr
     if (action === "image" || action === "file" || action === "camera") {
       const input = document.createElement("input");
       input.type = "file";
+
       if (action === "image") {
-        input.accept = "image/*";
+        // Faqat galereyadan rasmlar — kameraga kirmasligi uchun capture'ni qo'ymaslik
+        input.setAttribute("accept", "image/*");
+        input.removeAttribute("capture");
       } else if (action === "camera") {
-        input.accept = "image/*";
-        // capture="environment" = orqa kamera, "user" = old kamera
-        // DOM'ga qo'shmasdan oldin o'rnatilishi kerak
-        input.capture = "environment";
+        // Kamera — capture attribut majburiy attribute sifatida qo'yiladi
+        input.setAttribute("accept", "image/*,video/*");
+        input.setAttribute("capture", "environment");
       } else {
-        input.accept = "*/*";
+        // Hujjat — kameraga aloqasi yo'q
+        input.setAttribute("accept", "*/*");
+        input.removeAttribute("capture");
       }
 
       input.onchange = async (e) => {
@@ -771,33 +796,51 @@ export default function ChatWindow({ roomId, roomName, onBack, onVideoCall }: Pr
       input.style.display = "none";
       document.body.appendChild(input);
       input.click();
-      setTimeout(() => document.body.removeChild(input), 30000);
+      setTimeout(() => { try { document.body.removeChild(input); } catch {} }, 60000);
 
     } else if (action === "location") {
       if (!navigator.geolocation) {
         alert("Bu brauzer joylashuvni qo'llab-quvvatlamaydi");
         return;
       }
-      // Avval ruxsatni tekshirish
+
+      // 2 bosqichli strategiya: avval keshlangan past aniqlik (tez), keyin yuqori aniqlik
+      let sent = false;
+
+      const sendOnce = async (pos: GeolocationPosition) => {
+        if (sent) return;
+        sent = true;
+        try {
+          await sendLocation(roomId, pos.coords.latitude, pos.coords.longitude);
+        } catch (e) {
+          console.error("sendLocation xato:", e);
+          alert("Manzil yuborilmadi");
+        }
+      };
+
+      const onErr = (err: GeolocationPositionError) => {
+        if (sent) return;
+        if (err.code === 1)      alert("Joylashuv ruxsati rad etildi.\nBrauzer sozlamalaridan ruxsat bering.");
+        else if (err.code === 2) alert("Joylashuv aniqlanmadi (GPS signal yo'q).\nTashqariga chiqib qayta urining.");
+        else if (err.code === 3) alert("Joylashuv aniqlanishi vaqti tugadi. Qayta urining.");
+        else                     alert("Joylashuv xatosi: " + (err.message || "noma'lum"));
+      };
+
+      // 1-bosqich: keshdan tezda olishga harakat (instant)
       navigator.geolocation.getCurrentPosition(
-        async (pos) => {
-          try {
-            await sendLocation(roomId, pos.coords.latitude, pos.coords.longitude);
-          } catch (e) {
-            console.error("sendLocation xato:", e);
-            alert("Manzil yuborilmadi");
-          }
-        },
-        (err) => {
-          if (err.code === 1)      alert("Joylashuv ruxsati rad etildi.\nBrauzer sozlamalaridan ruxsat bering.");
-          else if (err.code === 2) alert("Joylashuv aniqlanmadi (GPS signal yo'q).");
-          else if (err.code === 3) alert("Joylashuv aniqlanishi vaqti tugadi. Qayta urining.");
-          else                     alert("Joylashuv xatosi: " + err.message);
+        sendOnce,
+        () => {
+          // Cache'da yo'q — 2-bosqich: yangi GPS o'qish, 30s timeout
+          navigator.geolocation.getCurrentPosition(sendOnce, onErr, {
+            timeout: 30000,
+            enableHighAccuracy: false,
+            maximumAge: 0,
+          });
         },
         {
-          timeout: 15000,
+          timeout: 5000,
           enableHighAccuracy: false,
-          maximumAge: 60000,  // 1 daqiqa keshdan foydalanish
+          maximumAge: 300000,  // 5 daqiqa kesh
         }
       );
     }
@@ -944,6 +987,7 @@ export default function ChatWindow({ roomId, roomName, onBack, onVideoCall }: Pr
       <main
         ref={messagesContainerRef}
         onScroll={handleContainerScroll}
+        data-scrollable
         className="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-1"
       >
         {messages.length === 0 && (
@@ -990,11 +1034,12 @@ export default function ChatWindow({ roomId, roomName, onBack, onVideoCall }: Pr
                     {msg.sender.slice(1, 3).toUpperCase()}
                   </div>
                 )}
-                <div className={`flex flex-col ${msg.isOwn ? "items-end" : "items-start"} max-w-[80%] md:max-w-[65%] cursor-pointer`}
+                <div className={`flex flex-col ${msg.isOwn ? "items-end" : "items-start"} max-w-[80%] md:max-w-[65%] cursor-pointer no-select`}
                   onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setContextMenu({ msg, x: r.left, y: r.top - 10 }); }}
                   onTouchStart={(e) => handleMsgPressStart(e, msg)}
                   onTouchEnd={handleMsgPressEnd}
-                  onTouchMove={handleMsgPressEnd}>
+                  onTouchCancel={handleMsgPressEnd}
+                  onTouchMove={handleMsgPressMove}>
                   {msg.replyTo && (
                     <div
                       onClick={(e) => {
@@ -1188,39 +1233,45 @@ export default function ChatWindow({ roomId, roomName, onBack, onVideoCall }: Pr
             </button>
           </div>
         ) : (
-          <div className="flex items-end gap-2 px-3 py-2">
-            <button onClick={() => setShowAttach(!showAttach)} className="text-outline p-1.5 rounded-full hover:bg-surface-variant/50 flex-shrink-0 mb-0.5">
-              <span className="material-symbols-outlined text-[22px]">add</span>
+          <div className="flex items-end gap-1.5 px-2 py-2">
+            <button
+              onClick={() => setShowAttach(!showAttach)}
+              className="text-outline rounded-full hover:bg-surface-variant/50 flex-shrink-0 w-11 h-11 flex items-center justify-center"
+              aria-label="Biriktirish"
+            >
+              <span className="material-symbols-outlined text-[24px]">add</span>
             </button>
-            <div className="flex-1 bg-surface-container-low border border-outline-variant/20 rounded-3xl flex items-end px-1 py-1 min-h-[38px] focus-within:border-primary-container/40 transition-all">
+            <div className="flex-1 bg-surface-container-low border border-outline-variant/20 rounded-3xl flex items-end px-1 py-1 min-h-[44px] focus-within:border-primary-container/40 transition-all">
               <textarea
                 value={inputText}
                 onChange={e => handleInputChange(e.target.value)}
                 onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
                 placeholder={editingMsg ? "Tahrirlash..." : replyTo ? `${replyTo.senderName} ga javob...` : "Xabar yozing..."}
                 rows={1}
-                className="w-full bg-transparent border-none outline-none focus:ring-0 px-2 py-1.5 text-[14px] text-on-surface placeholder:text-outline resize-none max-h-[80px] overflow-y-auto"
-                style={{ minHeight: "32px" }}
+                className="w-full bg-transparent border-none outline-none focus:ring-0 px-2 py-2 text-[15px] text-on-surface placeholder:text-outline resize-none max-h-[100px] overflow-y-auto"
+                style={{ minHeight: "36px" }}
               />
               {inputText.trim() && (
                 <button onClick={handleSend} disabled={sending}
-                  className="bg-primary-container text-on-primary rounded-full w-7 h-7 flex items-center justify-center m-0.5 flex-shrink-0 disabled:opacity-50">
-                  <span className="material-symbols-outlined text-[16px]" style={{ fontVariationSettings: "'FILL' 1" }}>
+                  className="bg-primary-container text-on-primary rounded-full w-8 h-8 flex items-center justify-center m-1 flex-shrink-0 disabled:opacity-50"
+                  aria-label="Yuborish"
+                >
+                  <span className="material-symbols-outlined text-[18px]" style={{ fontVariationSettings: "'FILL' 1" }}>
                     {editingMsg ? "check" : "arrow_upward"}
                   </span>
                 </button>
               )}
             </div>
-            <button
-              onClick={startRecording}
-              className={`p-1.5 rounded-full flex-shrink-0 mb-0.5 transition-colors ${
-                recording
-                  ? "text-error bg-error/10 animate-pulse"
-                  : "text-outline hover:bg-surface-variant/50"
-              }`}
-            >
-              <span className="material-symbols-outlined text-[22px]">mic</span>
-            </button>
+            {!inputText.trim() && (
+              <button
+                onClick={startRecording}
+                onContextMenu={(e) => e.preventDefault()}
+                className="rounded-full flex-shrink-0 w-11 h-11 flex items-center justify-center bg-primary-container/15 text-primary active:scale-95 transition-all"
+                aria-label="Ovozli xabar"
+              >
+                <span className="material-symbols-outlined text-[22px]" style={{ fontVariationSettings: "'FILL' 1" }}>mic</span>
+              </button>
+            )}
           </div>
         )}
       </div>

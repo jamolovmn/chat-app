@@ -50,6 +50,12 @@ export default function VideoCall({ roomId, callerName, onEnd, incomingCall }: P
       localVideoRef.current.srcObject = stream;
       localStreamRef.current = stream;
     }
+    // Mobil brauzerlarda autoplay ko'pincha ishlamaydi — majburiy play()
+    localVideoRef.current.muted = true;
+    localVideoRef.current.playsInline = true;
+    localVideoRef.current.play().catch(err => {
+      console.warn("Local video play() xato:", err?.message);
+    });
   }, []);
 
   const attachRemoteStream = useCallback((call: MatrixCall) => {
@@ -59,6 +65,7 @@ export default function VideoCall({ roomId, callerName, onEnd, incomingCall }: P
     if (el && el.srcObject !== stream) {
       el.srcObject = stream;
       el.muted = false;  // always start unmuted (speaker on by default)
+      el.playsInline = true;
       el.play().catch(() => {});
     }
     const hasVid = stream.getVideoTracks().some(t => t.enabled && t.readyState === "live");
@@ -149,6 +156,11 @@ export default function VideoCall({ roomId, callerName, onEnd, incomingCall }: P
           if (!client) throw new Error("Matrix client yo'q");
           if (!client.supportsVoip()) throw new Error("Brauzeringiz WebRTC'ni qo'llab-quvvatlamaydi");
 
+          // Mobil brauzerlarda HTTPS bo'lmasa getUserMedia ishlamaydi — oldindan tekshirish
+          if (!navigator.mediaDevices?.getUserMedia) {
+            throw new Error("Kamera/mikrofon API mavjud emas. HTTPS ulanish kerak.");
+          }
+
           const call = createOutgoingCall(roomId);
           if (!call) throw new Error("Qo'ng'iroq yaratib bo'lmadi");
 
@@ -159,13 +171,26 @@ export default function VideoCall({ roomId, callerName, onEnd, incomingCall }: P
             call.hangup(CallErrorCode.UserHangup, true);
             return;
           }
+          // Stream tayyor bo'lishi uchun bir necha martta urinib ko'ramiz
           attachLocalStream(call);
+          for (const ms of [100, 300, 800, 1500]) {
+            setTimeout(() => {
+              if (mountedRef.current && callRef.current) attachLocalStream(callRef.current);
+            }, ms);
+          }
         }
       } catch (err: any) {
         if (!mountedRef.current) return;
         console.error("VideoCall setup xato:", err);
-        setErrorMsg(err?.message || "Kamera/mikrofon ruxsati kerak yoki ulanish xatosi");
-        setTimeout(() => { if (mountedRef.current) onEnd(); }, 2500);
+        const msg = err?.name === "NotAllowedError"
+          ? "Kamera/mikrofon ruxsati rad etildi. Brauzer sozlamalaridan ruxsat bering."
+          : err?.name === "NotFoundError"
+          ? "Kamera yoki mikrofon topilmadi"
+          : err?.name === "NotReadableError"
+          ? "Kamera band — boshqa ilova ishlatmoqda"
+          : (err?.message || "Kamera/mikrofon ruxsati kerak yoki ulanish xatosi");
+        setErrorMsg(msg);
+        setTimeout(() => { if (mountedRef.current) onEnd(); }, 3500);
       }
     })();
 
@@ -209,11 +234,23 @@ export default function VideoCall({ roomId, callerName, onEnd, incomingCall }: P
     if (!call || call.state === CallState.Ended) return;
     setUiState("connecting");
     try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error("Kamera/mikrofon API mavjud emas. HTTPS ulanish kerak.");
+      }
       await call.answer(true, true);
+      // Stream tayyorlashga vaqt berish — mobilda kechikishi mumkin
+      for (const ms of [100, 300, 800, 1500]) {
+        setTimeout(() => {
+          if (mountedRef.current && callRef.current) attachLocalStream(callRef.current);
+        }, ms);
+      }
     } catch (err: any) {
       console.error("answer() xato:", err);
-      setErrorMsg(err?.message || "Qabul qilishda xato");
-      setTimeout(() => { if (mountedRef.current) onEnd(); }, 2000);
+      const msg = err?.name === "NotAllowedError"
+        ? "Kamera/mikrofon ruxsati rad etildi"
+        : (err?.message || "Qabul qilishda xato");
+      setErrorMsg(msg);
+      setTimeout(() => { if (mountedRef.current) onEnd(); }, 2500);
     }
   }
 

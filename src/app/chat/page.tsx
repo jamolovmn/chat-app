@@ -85,12 +85,16 @@ export default function ChatPage() {
 
   // Back button handler — runs once on mount
   useEffect(() => {
-    // Push initial state so popstate can fire on first back press
-    window.history.pushState({ chatApp: true }, "", "/chat");
+    // 2 ta entry push qilamiz — birinchi bosishda ham popstate fire bo'lsin
+    // (history state'da chat marker bo'lmasa, browser tashqariga chiqishi mumkin)
+    if (!window.history.state?.chatApp) {
+      window.history.replaceState({ chatApp: true, level: 0 }, "", "/chat");
+      window.history.pushState({ chatApp: true, level: 1 }, "", "/chat");
+    }
 
-    function handlePopState() {
-      // Always push a new state so app never exits on back press
-      window.history.pushState({ chatApp: true }, "", "/chat");
+    function handlePopState(e: PopStateEvent) {
+      // Har doim yangi state push — ilova hech qachon chiqmasin
+      window.history.pushState({ chatApp: true, level: 1 }, "", "/chat");
       if (showVideoCallRef.current) {
         setShowVideoCall(false);
         setIncomingCall(null);
@@ -100,7 +104,7 @@ export default function ChatPage() {
         setSelectedRoomId(null);
         return;
       }
-      // On list screen — stay here, do nothing
+      // Ro'yxat ekranida — hech narsa qilmaymiz
     }
 
     window.addEventListener("popstate", handlePopState);
@@ -111,12 +115,12 @@ export default function ChatPage() {
     setSelectedRoomId(id);
     setSelectedRoomName(name);
     setShowVideoCall(false);
-    window.history.pushState({ chatApp: true, room: id }, "", "/chat");
+    window.history.pushState({ chatApp: true, level: 2, room: id }, "", "/chat");
   }
 
   function goBack() {
     setSelectedRoomId(null);
-    // Don't call history.back() — popstate handler manages navigation
+    // history.back() chaqirmaymiz — popstate handler navigatsiyani boshqaradi
   }
 
   function endCall() {

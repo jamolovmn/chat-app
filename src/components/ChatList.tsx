@@ -294,7 +294,7 @@ export default function ChatList({ onSelectRoom, activeRoomId, isAdmin = false }
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto" data-scrollable>
         {loading ? (
           <div className="flex items-center justify-center h-32 text-outline text-sm">Yuklanmoqda...</div>
         ) : filtered.length === 0 ? (
