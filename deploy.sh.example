@@ -1,0 +1,39 @@
+#!/bin/bash
+# ============================================
+#  chat-app deploy script template
+#
+#  1) Copy this file:        cp deploy.sh.example deploy.sh
+#  2) Fill in YOUR_SERVER_IP and YOUR_DOMAIN below
+#  3) Run on the VPS:        bash deploy.sh
+#
+#  The real deploy.sh is gitignored — never commit server IPs.
+# ============================================
+
+set -e
+
+APP_DIR="/var/www/chat-app"
+SERVER_IP="YOUR_SERVER_IP"     # e.g. 1.2.3.4
+DOMAIN="YOUR_DOMAIN"            # e.g. chat.example.com
+
+echo "==> 1. Creating app directory..."
+mkdir -p "$APP_DIR"
+cd "$APP_DIR"
+
+echo "==> 2. Upload files from your local machine first:"
+echo "       scp -r ./chat-app/* root@${SERVER_IP}:${APP_DIR}/"
+echo ""
+read -p "Press Enter once the files are uploaded..."
+
+echo "==> 3. Building Docker image (5–10 min)..."
+docker compose build
+
+echo "==> 4. Starting container..."
+docker compose up -d
+
+echo "==> 5. Status check..."
+docker compose ps
+docker compose logs --tail=20
+
+echo ""
+echo "✅ Done — open https://${DOMAIN}"
+echo "   (Make sure DNS for ${DOMAIN} points to ${SERVER_IP})"

@@ -1,38 +1,72 @@
-# Environment
+# ─────────────────────────────────────────────
+# Environment / secrets — NEVER commit these
+# ─────────────────────────────────────────────
 .env
 .env.local
 .env.*.local
+.env.production
+.env.development
 
 # Claude Code (may contain credentials in allowed commands)
 .claude/
 
-# Deploy scripts (contain server IPs)
+# Deploy scripts (contain server IPs / SSH details)
 deploy.sh
 
+# ─────────────────────────────────────────────
 # Dependencies
+# ─────────────────────────────────────────────
 node_modules/
+.pnp
+.pnp.js
 
-# Next.js build output
+# ─────────────────────────────────────────────
+# Next.js / build output
+# ─────────────────────────────────────────────
 .next/
 out/
-
-# Production
 build/
+dist/
 
-# OS
+# TypeScript incremental build cache
+*.tsbuildinfo
+tsconfig.tsbuildinfo
+
+# ─────────────────────────────────────────────
+# Logs
+# ─────────────────────────────────────────────
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ─────────────────────────────────────────────
+# Testing / coverage
+# ─────────────────────────────────────────────
+coverage/
+.nyc_output/
+
+# ─────────────────────────────────────────────
+# OS junk
+# ─────────────────────────────────────────────
 .DS_Store
 Thumbs.db
+Desktop.ini
 
-# Editor
+# ─────────────────────────────────────────────
+# Editors / IDE
+# ─────────────────────────────────────────────
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
 
-# Logs
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Misc
+# ─────────────────────────────────────────────
+# Certificates / keys
+# ─────────────────────────────────────────────
 *.pem
+*.key
+*.crt
