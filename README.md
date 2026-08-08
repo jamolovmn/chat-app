@@ -1,5 +1,14 @@
 # Matrix Chat App
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Next.js](https://img.shields.io/badge/Next.js-14-000000?logo=nextdotjs&logoColor=white)](https://nextjs.org)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
+[![Matrix](https://img.shields.io/badge/Matrix-protocol-000000?logo=matrix&logoColor=white)](https://matrix.org)
+[![Docker](https://img.shields.io/badge/Docker-compose-2496ED?logo=docker&logoColor=white)](docker-compose.yml)
+[![GitHub stars](https://img.shields.io/github/stars/jamolovmn/chat-app?style=flat)](https://github.com/jamolovmn/chat-app/stargazers)
+[![Last commit](https://img.shields.io/github/last-commit/jamolovmn/chat-app)](https://github.com/jamolovmn/chat-app/commits)
+
 A mobile-first, real-time chat application built on the [Matrix protocol](https://matrix.org)
 with **Next.js 14** (App Router) against a Matrix (Synapse) homeserver.
 Supports 1-on-1 chat, media sharing, location, voice messages, and WebRTC
